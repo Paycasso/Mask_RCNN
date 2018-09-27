@@ -891,3 +891,24 @@ def denorm_boxes(boxes, shape):
     scale = np.array([h - 1, w - 1, h - 1, w - 1])
     shift = np.array([0, 0, 1, 1])
     return np.around(np.multiply(boxes, scale) + shift).astype(np.int32)
+
+def get_all_file_list(root_dir):
+    '''
+    Given a directory path, form a list of paths of all images contained within
+    '''
+    matches = []
+    for root, dirnames, filenames in os.walk(root_dir):
+        for filename in filenames:
+            if filename.endswith(('.png', '.PNG', '.jpg', '.JPG', '.JPEG', '.jpeg')):
+                matches.append(os.path.join(root, filename))
+    return matches
+
+def showims(img_array_list, label_list=None):
+    from matplotlib import pyplot as plt
+    fig = plt.figure()
+    for i, img in enumerate(img_array_list):
+        a = fig.add_subplot(1, len(img_array_list), i+1)
+        imgplot = plt.imshow(img)
+        if label_list is not None:
+            a.set_title(label_list[i])
+    plt.show()
