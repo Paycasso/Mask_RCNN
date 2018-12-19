@@ -7,7 +7,7 @@ import time
 import numpy as np
 import cv2
 import matplotlib
-# matplotlib.use("Agg")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # Root directory of the project
@@ -49,13 +49,24 @@ def get_ax(rows=1, cols=1, size=8):
     return ax
 
 
+DATASET_CONFIG = {
+'via_cornerpoints_filepath': 'classified_quadrilateral_cornerpoints.txt',
+'real_image_dirpath': os.path.join(os.path.expanduser('~'), 'Paycasso_Data', 'Classified_Images', 'C'),
+'template_dirpath': os.path.join(os.path.expanduser('~'), 'Paycasso_Data', '_1355_20161123'),
+'backgrounds_dirpath': os.path.join(os.path.expanduser('~'), 'Paycasso_Data', 'BACKGROUND_IMAGES'),
+'prob_real': 0.5,
+'width': 320,
+'height': 240
+}
+
+
 # Training dataset
-dataset_train = CardsDataset()
-dataset_train.load_shapes(500, config.IMAGE_SHAPE[0], config.IMAGE_SHAPE[1])
+dataset_train = CardsDataset(**DATASET_CONFIG)
+dataset_train.load_shapes(2800, config.IMAGE_SHAPE[0], config.IMAGE_SHAPE[1])
 dataset_train.prepare()
 
 # Validation dataset
-dataset_val = CardsDataset()
+dataset_val = CardsDataset(**DATASET_CONFIG)
 dataset_val.load_shapes(50, config.IMAGE_SHAPE[0], config.IMAGE_SHAPE[1])
 dataset_val.prepare()
 
@@ -92,7 +103,7 @@ elif init_with == "last":
 # which layers to train by name pattern.
 model.train(dataset_train, dataset_val,
             learning_rate=config.LEARNING_RATE,
-            epochs=1,
+            epochs=2,
             layers='heads')
 
 # Fine tune all layers
@@ -101,7 +112,7 @@ model.train(dataset_train, dataset_val,
 # train by name pattern.
 model.train(dataset_train, dataset_val,
             learning_rate=config.LEARNING_RATE / 10,
-            epochs=2,
+            epochs=50,
             layers="all")
 
 # Save weights

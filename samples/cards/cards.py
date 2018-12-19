@@ -47,7 +47,8 @@ class CardsConfig(Config):
     IMAGE_MAX_DIM = 128
 
     # Use smaller anchors because our image and objects are small
-    RPN_ANCHOR_SCALES = (8, 16, 32, 64, 128)  # anchor side in pixels
+    # RPN_ANCHOR_SCALES = (8, 16, 32, 64, 128)  # anchor side in pixels
+    RPN_ANCHOR_SCALES = (32, 42, 64, 84, 128) # try this instead
 
     # Reduce training ROIs per image because the images are small and have
     # few objects. Aim to allow ROI sampling to pick 33% positive ROIs.
@@ -58,6 +59,15 @@ class CardsConfig(Config):
 
     # use small validation steps since the epoch is small
     VALIDATION_STEPS = 5
+
+    # Ratios of anchors at each cell (width/height)
+    # A value of 1 represents a square anchor, and 0.5 is a wide anchor
+    RPN_ANCHOR_RATIOS = [0.5, 0.65, 0.8]
+
+    # If enabled, resizes instance masks to a smaller size to reduce
+    # memory load. Recommended when using high-resolution images.
+    USE_MINI_MASK = True
+    MINI_MASK_SHAPE = (112, 112)  # (height, width) of the mini-mask
 
 
 RANDOM_HOMOGRAPHY_CONIG = {'scale_amount' : (1, 2),
@@ -213,8 +223,9 @@ class CardsDataset(utils.Dataset):
             random_image_properties['real_image_path'] = filename
             cornerpoints = np.array([[x0,y0],[x1,y1],[x2,y2],[x3,y3]], dtype=np.float32)
 
-
-            im = cv2.imread(os.path.join(self.real_image_dirpath, filename), 1)
+            abs_impath = os.path.join(self.real_image_dirpath, filename)
+            im = cv2.imread(abs_impath, 1)
+            print('Loaded image from {}'.format(abs_impath))
             h,w,c = im.shape
             sfx = float(width)/w
             sfy = float(height)/h

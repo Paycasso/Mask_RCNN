@@ -5,12 +5,12 @@ USAGE: $python this_script.py ipod_rectangle.jpg background.jpg
 '''
 import random
 
-from synthdocs import coordinate_geometry
+from samples.cards.synthdocs import coordinate_geometry
 import cv2
 import numpy as np
 from PIL import Image
 
-from synthdocs.random_homography import Random_Homography
+from samples.cards.synthdocs.random_homography import Random_Homography
 
 
 def showims(img_array_list, label_list=None):
@@ -21,6 +21,9 @@ def showims(img_array_list, label_list=None):
         if label_list is not None:
             a.set_title(label_list[i])
     plt.show()
+
+def is_even(number):
+    return number % 2 == 0
 
 class PhotoSynthesizer(object):
     '''
@@ -66,6 +69,8 @@ class PhotoSynthesizer(object):
         circle_radius = random.randint(int(w / 100), int(w / 4))
         # choose an amount to blur the circle (to give it a feathered edge)
         blur_kernelsize = random.randint(int(circle_radius / 2), circle_radius)
+        if is_even(blur_kernelsize):
+            blur_kernelsize += 1
         constant = random.uniform(0.4, 0.8)
         # print('centre: ({},{})\ncircle radius: {}\nblur kernel size: {}\naddative constant: {}'.format(centre_x, centre_y, circle_radius, blur_kernelsize, constant))
         mask = np.zeros_like(image_cv2, dtype=np.uint8)

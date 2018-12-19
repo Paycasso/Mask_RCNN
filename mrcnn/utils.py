@@ -912,3 +912,4 @@ def showims(img_array_list, label_list=None):
         if label_list is not None:
             a.set_title(label_list[i])
     plt.show()
+

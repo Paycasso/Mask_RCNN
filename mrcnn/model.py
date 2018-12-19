@@ -2163,9 +2163,10 @@ class MaskRCNN():
         metrics. Then calls the Keras compile() function.
         """
         # Optimizer object
-        optimizer = keras.optimizers.SGD(
-            lr=learning_rate, momentum=momentum,
-            clipnorm=self.config.GRADIENT_CLIP_NORM)
+        # optimizer = keras.optimizers.SGD(
+        #     lr=learning_rate, momentum=momentum,
+        #     clipnorm=self.config.GRADIENT_CLIP_NORM)
+        optimizer = keras.optimizers.Adam(lr=learning_rate)
         # Add Losses
         # First, clear previously set losses to avoid duplication
         self.keras_model._losses = []
@@ -2528,8 +2529,14 @@ class MaskRCNN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        detections, _, _, mrcnn_mask, _, _, _ =\
+
+        # detections, mrcnn_class, mrcnn_bbox, mrcnn_mask, rpn_rois, rpn_class, rpn_bbox
+        # detections, _, _, mrcnn_mask, _, _, _ =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
+
+        raw_outputs = self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
+        detections, mrcnn_class, mrcnn_bbox, mrcnn_mask, rpn_rois, rpn_class, rpn_bbox = raw_outputs
+
         # Process detections
         results = []
         for i, image in enumerate(images):
