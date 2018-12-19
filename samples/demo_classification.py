@@ -57,8 +57,7 @@ config.BATCH_SIZE = 1
 config.display()
 
 # Create model object in inference mode.
-# model = modellib.MaskRCNN(mode="inference", model_dir=MODEL_DIR, config=config)
-model = modellib.MaskRCNNFeatureExtraction(mode='feature_extraction', model_dir=MODEL_DIR, config=config)
+model = modellib.MaskRCNN(mode="inference", model_dir=MODEL_DIR, config=config)
 
 # Load weights trained on MS-COCO
 model.load_weights(WEIGHTS_PATH, by_name=True)
@@ -92,12 +91,17 @@ for file_name in file_names:
     # Run detection
     results = model.detect([image], verbose=1)
     print('Detection took {} seconds'.format(time.time()-start_time))
-    print(results.shape)
-    # print(results)
-    feature_vector = np.squeeze(results)
-        
-    #
-    # # Visualize results
-    # r = results[0]
-    # visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
-    #                             class_names, r['scores'])
+
+    # Visualize results
+    r = results[0]
+
+    feature_vectors = r['feature_vectors']
+    dog = feature_vectors[0]
+    print(dog.shape)
+    print('l2 norm of dog: {}'.format(np.linalg.norm(dog)))
+
+
+
+
+    visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
+                                class_names, r['scores'])

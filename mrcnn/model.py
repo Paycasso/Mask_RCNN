@@ -713,10 +713,10 @@ def refine_detections_graph(rois, probs, deltas, window, config, pooled_rois):
     # Clip boxes to image window
     refined_rois = clip_boxes_graph(refined_rois, window)
 
-    # flatten ROI pooled features
-    number, h, w, c = pooled_rois.shape
-    flat_pooled_rois = tf.reshape(pooled_rois, [-1, h*w*c])
-    # TODO L2 normalization of extracted pooled ROI features
+    # # flatten ROI pooled features
+    # number, h, w, c = pooled_rois.shape
+    # flat_pooled_rois = tf.reshape(pooled_rois, [-1, h*w*c])
+    # # TODO L2 normalization of extracted pooled ROI features
 
     # TODO: Filter out boxes with zero area
 
@@ -774,7 +774,7 @@ def refine_detections_graph(rois, probs, deltas, window, config, pooled_rois):
     keep = tf.gather(keep, top_ids)
 
     # bunch up just the top 100 features
-    roi_feature_vectors = tf.gather(flat_pooled_rois, keep)  # the actual ROI features
+    roi_feature_vectors = tf.gather(pooled_rois, keep)  # the actual ROI features
     # firstthing = tf.gather(refined_rois, keep)
     # secondthing = tf.to_float(tf.gather(class_ids, keep))
     # secondthing_newaxis = secondthing[..., tf.newaxis]
@@ -947,6 +947,8 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
 
     pooled_rois = x
 
+    normalized_flattened_pooled_rois = flatten_and_normalize_roi_pooled_features(pooled_rois)
+
     # Two 1024 FC layers (implemented with Conv2D for consistency)
     x = KL.TimeDistributed(KL.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid"),
                            name="mrcnn_class_conv1")(x)
@@ -974,7 +976,7 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
     s = K.int_shape(x)
     mrcnn_bbox = KL.Reshape((s[1], num_classes, 4), name="mrcnn_bbox")(x)
 
-    return mrcnn_class_logits, mrcnn_probs, mrcnn_bbox, pooled_rois
+    return mrcnn_class_logits, mrcnn_probs, mrcnn_bbox, normalized_flattened_pooled_rois
 
 
 def build_fpn_mask_graph(rois, feature_maps, image_meta,
@@ -1057,16 +1059,31 @@ def fpn_feature_extraction_graph(rois, feature_maps, image_meta,
                         name="roi_align_classifier")([rois, image_meta] + feature_maps)
 
     pooled_rois = x
-    b, n, h, w, c = pooled_rois.get_shape().as_list()
+    # b, n, h, w, c = pooled_rois.get_shape().as_list()
+    # # Flatten the ROI-pooled feature tensors
+    # # flatten_rois = lambda x: tf.reshape(x, (b, n, h*w*c))
+    # # flattened_pooled_rois = KL.Lambda(flatten_rois)(pooled_rois)
+    # flattened_pooled_rois = KL.core.Reshape((-1, h*w*c))(pooled_rois)
+    #
+    # # L2 normalize the feature vectors
+    # wrap = lambda x: tf.keras.backend.l2_normalize(x)
+    # normalized_flattened_pooled_rois = KL.Lambda(wrap)(flattened_pooled_rois)
+
+    normalized_flattened_pooled_rois = flatten_and_normalize_roi_pooled_features(pooled_rois)
+
+    return normalized_flattened_pooled_rois
+
+
+def flatten_and_normalize_roi_pooled_features(roi_pooled_features):
+    b, n, h, w, c = roi_pooled_features.get_shape().as_list()
     # Flatten the ROI-pooled feature tensors
     # flatten_rois = lambda x: tf.reshape(x, (b, n, h*w*c))
     # flattened_pooled_rois = KL.Lambda(flatten_rois)(pooled_rois)
-    flattened_pooled_rois = KL.core.Reshape((-1, h*w*c))(pooled_rois)
+    flattened_pooled_rois = KL.core.Reshape((-1, h*w*c))(roi_pooled_features)
 
     # L2 normalize the feature vectors
-    wrap = lambda x: tf.keras.backend.l2_normalize(x)
+    wrap = lambda x: tf.keras.backend.l2_normalize(x, axis=-1)
     normalized_flattened_pooled_rois = KL.Lambda(wrap)(flattened_pooled_rois)
-
     return normalized_flattened_pooled_rois
 
 ############################################################
