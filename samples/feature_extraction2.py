@@ -19,6 +19,7 @@ from mrcnn import visualize
 # Import COCO config
 sys.path.append(os.path.join(ROOT_DIR, "samples/coco/"))  # To find local version
 from samples.cards.cards import CardsConfig
+from scipy.spatial.distance import cosine
 
 # Directory to save logs and trained model
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
@@ -33,6 +34,9 @@ MODEL_DIR = os.path.join(ROOT_DIR, "logs")
 # WEIGHTS_PATH = os.path.join(ROOT_DIR, "logs", 'cards20181219T1303/mask_rcnn_cards_0018.h5') # pretty good!
 WEIGHTS_PATH = os.path.join(ROOT_DIR, "logs", 'cards20181219T1303/mask_rcnn_cards_0050.h5') # pretty damn good
 
+# feature vector directory
+FEATURE_DIR = '/home/sal9000/PycharmProjects/Mask_RCNN/feature_vectors'
+
 
 # # Download COCO trained weights from Releases if needed
 # if not os.path.exists(WEIGHTS_PATH):
@@ -40,12 +44,14 @@ WEIGHTS_PATH = os.path.join(ROOT_DIR, "logs", 'cards20181219T1303/mask_rcnn_card
 
 # Directory of images to run detection on
 # IMAGE_DIR = os.path.join(ROOT_DIR, "images")
-IMAGE_DIR = '/home/sal9000/Paycasso_Data/LivePaycassoTestImages'
+# IMAGE_DIR = '/home/sal9000/Paycasso_Data/LivePaycassoTestImages'
 # IMAGE_DIR = '/home/sal9000/Paycasso_Data/NZ_test_images'
-# IMAGE_DIR = '/home/sal9000/Paycasso_Data/Classified_Images/C2'
+IMAGE_DIR = '/home/sal9000/Paycasso_Data/OnlyRelevant_TestImages'
 # IMAGE_DIR = '/home/sal9000/Pictures'
-IMAGE_DIR = '/home/sal9000/Paycasso_Data/IRL_REARS'
 IMAGE_DIR = '/home/sal9000/Desktop/credit_card'
+IMAGE_DIR = '/home/sal9000/Paycasso_Data/Only_Relevant_PrimaryDocs'
+
+
 
 class InferenceConfig(CardsConfig):
     # Set batch size to 1 since we'll be running inference on
@@ -84,10 +90,26 @@ model.load_weights(WEIGHTS_PATH, by_name=True)
 #                'teddy bear', 'hair drier', 'toothbrush']
 class_names = ['BG', 'Document']
 
+features_db = {}
+for filename in os.listdir(FEATURE_DIR):
+    category = filename.split('.')[0]
+    absfilename = os.path.join(FEATURE_DIR, filename)
+    with open(absfilename, 'rb') as f:
+        feature_vector = np.load(f)
+    features_db[category] = feature_vector
+
 # Load a random image from the images folder
 file_names = next(os.walk(IMAGE_DIR))[2]
 for file_name in file_names:
+    print('Working on {}'.format(file_name))
+    category = file_name.split('.')[0]
+
     image = skimage.io.imread(os.path.join(IMAGE_DIR, file_name))
+    print('shape of raw image: {}'.format(image.shape))
+    h,w,c = image.shape
+    if c > 3:
+        print('need to convert RGBA image to RGB')
+        image = skimage.color.rgba2rgb(image)
 
     start_time = time.time()
     # Run detection
@@ -96,5 +118,32 @@ for file_name in file_names:
 
     # Visualize results
     r = results[0]
-    visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
-                                class_names, r['scores'])
+
+    feature_vectors = r['feature_vectors']
+    if len(feature_vectors) > 1:
+        print('More than 1 detection found!!!!')
+    elif len(feature_vectors) == 0:
+        print('No detections found!!!!')
+    else:
+        for dog in feature_vectors:
+            # dog = feature_vectors[0]
+            print(dog.shape)
+            print('l2 norm of dog: {}'.format(np.linalg.norm(dog)))
+
+            # dists = []
+            # for category, feature_vector_tempalte in features_db.items():
+            #     dist = cosine(dog, feature_vector_tempalte)
+            #     dists.append((category, dist))
+            #
+            # dists = sorted(dists, key=lambda x: x[1])
+            # print('nearest neighbour: {}'.format(dists[0]))
+
+            # visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'],
+            #                             class_names, r['scores'])
+
+            savepath = '/home/sal9000/PycharmProjects/Mask_RCNN/feature_vectors/{}.feature'.format(category)
+
+            with open(savepath, 'wb') as f:
+                np.save(f, dog)
+
+    print('Blah blah')

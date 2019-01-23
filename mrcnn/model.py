@@ -682,7 +682,7 @@ class DetectionTargetLayer(KE.Layer):
 #  Detection Layer
 ############################################################
 
-def refine_detections_graph(rois, probs, deltas, window, config, pooled_rois):
+def refine_detections_graph(rois, probs, deltas, window, roi_pooled_features, config):
     """Refine classified proposals and filter overlaps and return final
     detections.
 
@@ -714,7 +714,6 @@ def refine_detections_graph(rois, probs, deltas, window, config, pooled_rois):
     # # flatten ROI pooled features
     # number, h, w, c = pooled_rois.shape
     # flat_pooled_rois = tf.reshape(pooled_rois, [-1, h*w*c])
-    # # TODO L2 normalization of extracted pooled ROI features
 
     # TODO: Filter out boxes with zero area
 
@@ -733,6 +732,7 @@ def refine_detections_graph(rois, probs, deltas, window, config, pooled_rois):
     pre_nms_scores = tf.gather(class_scores, keep)
     pre_nms_rois = tf.gather(refined_rois,   keep)
     unique_pre_nms_class_ids = tf.unique(pre_nms_class_ids)[0]
+    pre_nms_roi_pooled_features = tf.gather(roi_pooled_features, keep)
 
     def nms_keep_map(class_id):
         """Apply Non-Maximum Suppression on ROIs of the given class."""
@@ -742,6 +742,7 @@ def refine_detections_graph(rois, probs, deltas, window, config, pooled_rois):
         class_keep = tf.image.non_max_suppression(
                 tf.gather(pre_nms_rois, ixs),
                 tf.gather(pre_nms_scores, ixs),
+                # tf.gather(pre_nms_roi_pooled_features, ixs), # my addition
                 max_output_size=config.DETECTION_MAX_INSTANCES,
                 iou_threshold=config.DETECTION_NMS_THRESHOLD)
         # Map indices
@@ -772,11 +773,7 @@ def refine_detections_graph(rois, probs, deltas, window, config, pooled_rois):
     keep = tf.gather(keep, top_ids)
 
     # bunch up just the top 100 features
-    roi_feature_vectors = tf.gather(pooled_rois, keep)  # the actual ROI features
-    # firstthing = tf.gather(refined_rois, keep)
-    # secondthing = tf.to_float(tf.gather(class_ids, keep))
-    # secondthing_newaxis = secondthing[..., tf.newaxis]
-    # thirdthing = tf.gather(class_scores, keep)[..., tf.newaxis]
+    roi_pooled_features = tf.gather(roi_pooled_features, keep)  # the actual ROI features
 
     # Arrange output as [N, (y1, x1, y2, x2, class_id, score)]
     # Coordinates are normalized.
@@ -784,7 +781,7 @@ def refine_detections_graph(rois, probs, deltas, window, config, pooled_rois):
         tf.gather(refined_rois, keep),
         tf.to_float(tf.gather(class_ids, keep))[..., tf.newaxis],
         tf.gather(class_scores, keep)[..., tf.newaxis],
-        roi_feature_vectors
+        roi_pooled_features
         ], axis=1)
 
     # Pad with zeros if detections < DETECTION_MAX_INSTANCES
@@ -811,7 +808,7 @@ class DetectionLayer(KE.Layer):
         mrcnn_class = inputs[1]
         mrcnn_bbox = inputs[2]
         image_meta = inputs[3]
-        pooled_rois = inputs[4]
+        roi_pooled_features = inputs[4]
 
         # Get windows of images in normalized coordinates. Windows are the area
         # in the image that excludes the padding.
@@ -823,9 +820,14 @@ class DetectionLayer(KE.Layer):
 
         # Run detection refinement graph on each item in the batch
         detections_batch = utils.batch_slice(
-            [rois, mrcnn_class, mrcnn_bbox, window],
-            lambda x, y, w, z: refine_detections_graph(x, y, w, z, self.config, pooled_rois[0]),
-            self.config.IMAGES_PER_GPU)
+
+            [rois, mrcnn_class, mrcnn_bbox, window, roi_pooled_features],
+
+            lambda x, y, w, z, alpha: refine_detections_graph(x, y, w, z, alpha, self.config),
+
+            self.config.IMAGES_PER_GPU
+
+        )
 
         # Reshape output
         # [batch, num_detections, (y1, x1, y2, x2, class_id, class_score)] in
@@ -943,9 +945,9 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
     x = PyramidROIAlign([pool_size, pool_size],
                         name="roi_align_classifier")([rois, image_meta] + feature_maps)
 
-    pooled_rois = x
+    roi_pooled_features = x
 
-    normalized_flattened_pooled_rois = flatten_and_normalize_roi_pooled_features(pooled_rois)
+    roi_pooled_features = flatten_and_normalize_roi_pooled_features(roi_pooled_features)
 
     # Two 1024 FC layers (implemented with Conv2D for consistency)
     x = KL.TimeDistributed(KL.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid"),
@@ -974,7 +976,7 @@ def fpn_classifier_graph(rois, feature_maps, image_meta,
     s = K.int_shape(x)
     mrcnn_bbox = KL.Reshape((s[1], num_classes, 4), name="mrcnn_bbox")(x)
 
-    return mrcnn_class_logits, mrcnn_probs, mrcnn_bbox, normalized_flattened_pooled_rois
+    return mrcnn_class_logits, mrcnn_probs, mrcnn_bbox, roi_pooled_features
 
 
 def build_fpn_mask_graph(rois, feature_maps, image_meta,
@@ -2070,7 +2072,7 @@ class MaskRCNN():
 
             # Network Heads
             # TODO: verify that this handles zero padded ROIs
-            mrcnn_class_logits, mrcnn_class, mrcnn_bbox, pooled_rois =\
+            mrcnn_class_logits, mrcnn_class, mrcnn_bbox, roi_pooled_features =\
                 fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_meta,
                                      config.POOL_SIZE, config.NUM_CLASSES,
                                      train_bn=config.TRAIN_BN,
@@ -2110,7 +2112,7 @@ class MaskRCNN():
         else:
             # Network Heads
             # Proposal classifier and BBox regressor heads
-            mrcnn_class_logits, mrcnn_class, mrcnn_bbox, pooled_rois =\
+            mrcnn_class_logits, mrcnn_class, mrcnn_bbox, roi_pooled_features =\
                 fpn_classifier_graph(rpn_rois, mrcnn_feature_maps, input_image_meta,
                                      config.POOL_SIZE, config.NUM_CLASSES,
                                      train_bn=config.TRAIN_BN,
@@ -2120,7 +2122,7 @@ class MaskRCNN():
             # output is [batch, num_detections, (y1, x1, y2, x2, class_id, score)] in
             # normalized coordinates
             detections = DetectionLayer(config, name="mrcnn_detection")(
-                [rpn_rois, mrcnn_class, mrcnn_bbox, input_image_meta, pooled_rois])
+                [rpn_rois, mrcnn_class, mrcnn_bbox, input_image_meta, roi_pooled_features])
 
             # Create masks for detections
             detection_boxes = KL.Lambda(lambda x: x[..., :4])(detections)
@@ -2132,7 +2134,7 @@ class MaskRCNN():
 
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox,
-                                 mrcnn_mask, rpn_rois, rpn_class, rpn_bbox, pooled_rois],
+                                 mrcnn_mask, rpn_rois, rpn_class, rpn_bbox, roi_pooled_features],
                              name='mask_rcnn')
 
         # Add multi-GPU support.
@@ -2607,9 +2609,7 @@ class MaskRCNN():
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
 
         raw_outputs = self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
-        detections, mrcnn_class, mrcnn_bbox, mrcnn_mask, rpn_rois, rpn_class, rpn_bbox, pooled_rois = raw_outputs
-
-
+        detections, mrcnn_class, mrcnn_bbox, mrcnn_mask, rpn_rois, rpn_class, rpn_bbox, roi_pooled_features = raw_outputs
 
         # Process detections
         results = []
@@ -2951,7 +2951,10 @@ class MaskRCNNFeatureExtraction(MaskRCNN):
             log("anchors", anchors)
         # Run feature extraction
         # input_rois = tf.constant([[[0,0,1,1]]], dtype=tf.float32)
-        input_rois = np.array([[[0,0,1,1]]], dtype=np.float32)
+        image = images[0]
+        H,W,C = image.shape
+        input_rois = np.array([[[0,0,H,W]]], dtype=np.float32)
+        input_rois = utils.norm_boxes(input_rois, (H,W))
 
         # detections, mrcnn_class, mrcnn_bbox, mrcnn_mask, rpn_rois, rpn_class, rpn_bbox
         # detections, _, _, mrcnn_mask, _, _, _ =\self.keras_model.predict([molded_images, image_metas, anchors, input_rois], verbose=0)

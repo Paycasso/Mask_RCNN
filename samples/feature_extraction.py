@@ -40,10 +40,11 @@ WEIGHTS_PATH = os.path.join(ROOT_DIR, "logs", 'cards20181219T1303/mask_rcnn_card
 
 # Directory of images to run detection on
 # IMAGE_DIR = os.path.join(ROOT_DIR, "images")
-IMAGE_DIR = '/home/sal9000/Paycasso_Data/LivePaycassoTestImages'
+# IMAGE_DIR = '/home/sal9000/Paycasso_Data/LivePaycassoTestImages'
 # IMAGE_DIR = '/home/sal9000/Paycasso_Data/NZ_test_images'
 # IMAGE_DIR = '/home/sal9000/Paycasso_Data/Classified_Images/C2'
 # IMAGE_DIR = '/home/sal9000/Pictures'
+IMAGE_DIR = '/home/sal9000/Paycasso_Data/Only_Relevant_PrimaryDocs'
 
 class InferenceConfig(CardsConfig):
     # Set batch size to 1 since we'll be running inference on
@@ -57,8 +58,8 @@ config.BATCH_SIZE = 1
 config.display()
 
 # Create model object in inference mode.
-# model = modellib.MaskRCNN(mode="inference", model_dir=MODEL_DIR, config=config)
-model = modellib.MaskRCNNFeatureExtraction(mode='feature_extraction', model_dir=MODEL_DIR, config=config)
+model = modellib.MaskRCNN(mode="inference", model_dir=MODEL_DIR, config=config)
+# model = modellib.MaskRCNNFeatureExtraction(mode='feature_extraction', model_dir=MODEL_DIR, config=config)
 
 # Load weights trained on MS-COCO
 model.load_weights(WEIGHTS_PATH, by_name=True)
@@ -87,7 +88,12 @@ class_names = ['BG', 'Document']
 file_names = next(os.walk(IMAGE_DIR))[2]
 for file_name in file_names:
     image = skimage.io.imread(os.path.join(IMAGE_DIR, file_name))
+    if image.shape[2] > 3:
+        from skimage.color import rgba2rgb
+        image = rgba2rgb(image)
 
+
+    category = file_name.split('.')[0]
     start_time = time.time()
     # Run detection
     results = model.detect([image], verbose=1)
@@ -95,7 +101,10 @@ for file_name in file_names:
     print(results.shape)
     # print(results)
     feature_vector = np.squeeze(results)
-        
+    print('feature vector has l2 length {}'.format(np.linalg.norm(feature_vector)))
+    savepath = '/home/sal9000/PycharmProjects/Mask_RCNN/feature_vectors/{}.feature'.format(category)
+    with open(savepath, 'wb') as f:
+        np.save(f, feature_vector)
     #
     # # Visualize results
     # r = results[0]
